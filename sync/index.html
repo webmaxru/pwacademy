@@ -1,0 +1,97 @@
+<form action="api.html" method="post" onsubmit="submitForm(event, this)">
+  <input name="formName" type="text" />
+  <input name="formEmail" type="text" />
+  <button type="submit">Submit</button>
+</form>
+
+<button type="button" id="getTags">getTags</button>
+
+<button type="button" onclick="iterateData()">iterate</button>
+
+<script src="https://unpkg.com/dexie@3.0.3/dist/dexie.js"></script>
+
+<script>
+  document.querySelector('#getTags').addEventListener('click', (event) => {
+    reg.sync
+      .getTags()
+      .then((tags) => {
+        console.log(tags);
+      })
+      .catch((err) => {
+        console.error(err);
+      });
+  });
+
+  let swRegistration;
+
+  // Creating IndexedDB table
+  let db = new Dexie('contact-form');
+  db.version(1).stores({
+    contacts: '++id,name,email',
+  });
+
+  // Regular function for sending the data - for the fallback
+  function sendData(name, email) {
+    fetch('api.html', {
+      method: 'post',
+      body: JSON.stringify({
+        name: name,
+        email: email,
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw Error(res.statusText);
+        }
+        return res;
+      })
+      .then(() => {
+        console.log(`Sent data: ${name}, ${email}`);
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }
+
+  function submitForm(e, form) {
+    e.preventDefault();
+
+    // If neither Service Worker registered nor Background Sync API is available, using regular form sending
+    if (!swRegistration || !('sync' in swRegistration)) {
+      sendData(form.formName.value, form.formEmail.value);
+      return;
+    }
+
+    // Starting from saving data to IndexedDB
+    db.contacts
+      .put({ name: form.formName.value, email: form.formEmail.value })
+      .then(() => {
+        console.log(`Saved data item to IndexedDB`);
+
+        // Registering sync
+        return swRegistration.sync
+          .register('contact-sync')
+          .then((syncReg) => {
+            console.log(`Sync registered`);
+          })
+          .catch((error) => {
+            throw error;
+          });
+      })
+      .catch((error) => {
+        // Falling back to the regular form sending in case of any errors
+        console.error(`Error saving or registering sync: ${error}`);
+        sendData(form.formName.value, form.formEmail.value);
+      });
+  }
+
+  // Registering a service worker and preserving its registration object
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', (event) => {
+      navigator.serviceWorker.register('./sw.js').then((swReg) => {
+        console.log(`Service worker registered`);
+        swRegistration = swReg;
+      });
+    });
+  }
+</script>
